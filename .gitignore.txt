@@ -1,0 +1,14 @@
+# Dependencias de Node
+node_modules/
+dist/
+build/
+
+# Python / Flask
+__pycache__/
+*.pyc
+venv/
+env/
+
+# Configuración del Sistema operativo / IDE
+.DS_Store
+.vscode/
