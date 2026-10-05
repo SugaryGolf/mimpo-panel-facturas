@@ -288,4 +288,84 @@ def exportar_excel():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    import subprocess
+    import sys
+    import os
+    import time
+    import webbrowser
+    import signal
+
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    FRONTEND_DIR = os.path.join(BASE_DIR, 'mi-frontend')
+    FRONTEND_PORT = 5173
+    BACKEND_PORT  = 5000
+
+    # ── 1. Matar procesos previos en ambos puertos ──────────────────────────
+    def matar_puerto(puerto):
+        try:
+            resultado = subprocess.run(
+                f'netstat -aon | findstr ":{puerto} "',
+                shell=True, capture_output=True, text=True
+            )
+            for linea in resultado.stdout.strip().splitlines():
+                partes = linea.split()
+                if partes:
+                    pid = partes[-1]
+                    if pid.isdigit() and pid != '0':
+                        subprocess.run(f'taskkill /PID {pid} /F', shell=True,
+                                       capture_output=True)
+        except Exception:
+            pass
+
+    print("\n[MIMPO] Liberando puertos previos...")
+    matar_puerto(BACKEND_PORT)
+    matar_puerto(FRONTEND_PORT)
+    time.sleep(1)
+
+    # ── 2. Instalar node_modules si no existen ───────────────────────────────
+    node_modules = os.path.join(FRONTEND_DIR, 'node_modules')
+    if not os.path.isdir(node_modules):
+        print("[MIMPO] Instalando dependencias Node (primera vez, espera...)...")
+        subprocess.run('npm install', shell=True, cwd=FRONTEND_DIR)
+
+    # ── 3. Arrancar Vite (frontend) en segundo plano ─────────────────────────
+    print(f"[MIMPO] Iniciando frontend React en http://localhost:{FRONTEND_PORT} ...")
+    if sys.platform == 'win32':
+        vite_proc = subprocess.Popen(
+            'npm run dev',
+            shell=True,
+            cwd=FRONTEND_DIR,
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
+    else:
+        vite_proc = subprocess.Popen(
+            'npm run dev',
+            shell=True,
+            cwd=FRONTEND_DIR
+        )
+
+    # ── 4. Esperar a que Vite esté listo y abrir el navegador ────────────────
+    def abrir_navegador():
+        time.sleep(5)
+        webbrowser.open(f'http://localhost:{FRONTEND_PORT}')
+        print(f"[MIMPO] Navegador abierto en http://localhost:{FRONTEND_PORT}")
+
+    import threading
+    threading.Thread(target=abrir_navegador, daemon=True).start()
+
+    # ── 5. Cerrar Vite al salir Flask ────────────────────────────────────────
+    def cerrar_todo(sig=None, frame=None):
+        print("\n[MIMPO] Cerrando sistema...")
+        try:
+            vite_proc.terminate()
+        except Exception:
+            pass
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT,  cerrar_todo)
+    signal.signal(signal.SIGTERM, cerrar_todo)
+
+    # ── 6. Iniciar Flask ─────────────────────────────────────────────────────
+    print(f"[MIMPO] Backend Flask corriendo en http://localhost:{BACKEND_PORT}")
+    print("[MIMPO] Presiona CTRL+C para detener todo el sistema.\n")
+    app.run(debug=False, port=BACKEND_PORT, host='0.0.0.0')
